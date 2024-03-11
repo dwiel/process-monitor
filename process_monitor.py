@@ -27,7 +27,7 @@ import rumps
 class ProcessMonitor(rumps.App):
     def __init__(self):
         super(ProcessMonitor, self).__init__("")
-        self.process_name = "/Users/zdwiel/src/drives-watcher/run_drives.sh"
+        self.process_name = "/Users/zdwiel/src/process-monitor/run_drives.sh"
         self.check_interval = 1
         self.tmux_session = "process_monitor"
         self.green_icon = "green_circle.png"
@@ -40,7 +40,7 @@ class ProcessMonitor(rumps.App):
     def setup_logging(self):
         logger = logging.getLogger("process_monitor")
         logger.setLevel(logging.INFO)
-        handler = logging.FileHandler("process_monitor.log")
+        handler = logging.FileHandler("/tmp/process_monitor.log")
         formatter = logging.Formatter("%(asctime)s - %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -49,22 +49,32 @@ class ProcessMonitor(rumps.App):
     def start_monitoring(self):
         self.logger.info("Starting process monitoring...")
         try:
-            subprocess.check_output(["tmux", "has-session", "-t", self.tmux_session])
+            subprocess.check_output(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "source ~/.bash_profile; tmux has-session -t " + self.tmux_session,
+                ]
+            )
         except subprocess.CalledProcessError:
             subprocess.Popen(
                 [
-                    "tmux",
-                    "new-session",
-                    "-d",
-                    "-s",
-                    self.tmux_session,
-                    "-n",
-                    "monitoring",
+                    "/bin/bash",
+                    "-c",
+                    "source ~/.bash_profile; tmux new-session -d -s "
+                    + self.tmux_session
+                    + " -n monitoring",
                 ]
             )
         else:
             subprocess.Popen(
-                ["tmux", "new-window", "-t", self.tmux_session + ":monitoring"]
+                [
+                    "/bin/bash",
+                    "-c",
+                    "source ~/.bash_profile; tmux new-window -t "
+                    + self.tmux_session
+                    + ":monitoring",
+                ]
             )
 
     @rumps.clicked("Open iTerm2")
@@ -104,12 +114,13 @@ class ProcessMonitor(rumps.App):
             self.logger.info("Starting process: %s", self.process_name)
             subprocess.Popen(
                 [
-                    "tmux",
-                    "send-keys",
-                    "-t",
-                    self.tmux_session + ":monitoring",
-                    self.process_name,
-                    "Enter",
+                    "/bin/bash",
+                    "-c",
+                    "source ~/.bash_profile; tmux send-keys -t "
+                    + self.tmux_session
+                    + ":monitoring "
+                    + self.process_name
+                    + " Enter",
                 ]
             )
         else:
@@ -119,7 +130,13 @@ class ProcessMonitor(rumps.App):
         print("cleanup")
         if self.kill_tmux_on_exit:
             self.logger.info("Killing tmux session: %s", self.tmux_session)
-            subprocess.Popen(["tmux", "kill-session", "-t", self.tmux_session])
+            subprocess.Popen(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "source ~/.bash_profile; tmux kill-session -t " + self.tmux_session,
+                ]
+            )
 
 
 if __name__ == "__main__":
