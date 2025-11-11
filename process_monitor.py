@@ -1,27 +1,16 @@
 import sys
-
-
-class Logger(object):
-    def __init__(self):
-        self.terminal = sys.stdout
-        self.log = open("/tmp/process_monitor.log", "a")
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.log.write(message)
-
-    def flush(self):
-        pass
-
-
-sys.stdout = Logger()
-sys.stderr = sys.stdout
-
 import os
 import time
 import logging
 import subprocess
 import rumps
+from Foundation import (
+    NSWorkspace,
+    NSWorkspaceWillSleepNotification,
+    NSWorkspaceDidWakeNotification,
+)
+import objc
+from Cocoa import NSObject
 
 
 class ProcessMonitor(rumps.App):
@@ -36,6 +25,28 @@ class ProcessMonitor(rumps.App):
         self.logger = self.setup_logging()
         self.start_monitoring()
         self.menu = ["Open iTerm2"]
+        self.sleep_wake_observer = SleepWakeObserver.alloc().initWithMonitor_(self)
+        self.register_sleep_wake_notifications()
+
+    def register_sleep_wake_notifications(self):
+        workspace = NSWorkspace.sharedWorkspace()
+        notification_center = workspace.notificationCenter()
+        notification_center.addObserver_selector_name_object_(
+            self.sleep_wake_observer,
+            selector=objc.selector(
+                self.sleep_wake_observer.handleSleepNotification_, signature=b"v@:@"
+            ),
+            name="NSWorkspaceWillSleepNotification",
+            obj=None,
+        )
+        notification_center.addObserver_selector_name_object_(
+            self.sleep_wake_observer,
+            selector=objc.selector(
+                self.sleep_wake_observer.handleWakeNotification_, signature=b"v@:@"
+            ),
+            name="NSWorkspaceDidWakeNotification",
+            obj=None,
+        )
 
     def setup_logging(self):
         logger = logging.getLogger("process_monitor")
@@ -109,7 +120,22 @@ class ProcessMonitor(rumps.App):
         except subprocess.CalledProcessError:
             return False
 
-    def restart_process(self):
+    def restart_process(self, force=False):
+        if force:
+            self.logger.info("Force stopping process before restart")
+            # Send Ctrl-C twice to ensure process is terminated
+            subprocess.Popen(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "source ~/.bash_profile; tmux send-keys -t "
+                    + self.tmux_session
+                    + ":monitoring C-c C-c",
+                ]
+            )
+            # Give the process a moment to terminate
+            time.sleep(1)
+
         if not self.is_process_running():
             self.logger.info("Starting process: %s", self.process_name)
             subprocess.Popen(
@@ -137,6 +163,24 @@ class ProcessMonitor(rumps.App):
                     "source ~/.bash_profile; tmux kill-session -t " + self.tmux_session,
                 ]
             )
+
+
+class SleepWakeObserver(NSObject):
+    def initWithMonitor_(self, monitor):
+        self = objc.super(SleepWakeObserver, self).init()
+        if self is None:
+            return None
+        self.monitor = monitor
+        return self
+
+    def handleSleepNotification_(self, notification):
+        self.monitor.logger.info("System is going to sleep.")
+        # Perform any pre-sleep actions if necessary
+
+    def handleWakeNotification_(self, notification):
+        self.monitor.logger.info("System has woken up from sleep.")
+        # Restart the process upon wake
+        self.monitor.restart_process()
 
 
 if __name__ == "__main__":
